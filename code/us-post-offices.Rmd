@@ -45,9 +45,7 @@ library(gifski)
 
 
 p <- post_office_years %>% 
-  filter(
-    # year < 1850,
-    !state %in% c("HI", "AK")) %>% 
+  filter(!state %in% c("HI", "AK")) %>% 
   ggplot(aes(longitude, latitude, colour = established)) +
   borders("state") +
   geom_point(size = .25, alpha = .25) +
