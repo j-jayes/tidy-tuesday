@@ -45,11 +45,12 @@ library(gifski)
 
 
 p <- post_office_years %>% 
-  filter(year %% 20 == 0,
-         !state %in% c("HI", "AK")) %>% 
+  filter(
+    # year < 1850,
+    !state %in% c("HI", "AK")) %>% 
   ggplot(aes(longitude, latitude, colour = established)) +
   borders("state") +
-  geom_point(size = .1, alpha = .1) +
+  geom_point(size = .25, alpha = .25) +
   transition_manual(year) +
   labs(title = "Spread of post offices in the continental United States: Year { current_frame }",
        colour = "Post Office Established",
@@ -60,11 +61,17 @@ p <- post_office_years %>%
   theme(plot.title = element_text(hjust = .5),
         legend.position = "bottom") +
   guides(colour = guide_colorbar(barwidth = 30, 
-                                 barheight = 0.5, 
+                                 barheight = 1, 
                                  title.position = "top", 
                                  title.hjust = .5)) 
 
-animate(p, renderer = av_renderer())
+animate(p, renderer = av_renderer(file = "images/post-offices-ep_sq.mp4"),
+           width = 720,
+           heigh = 720,
+        res = 144,
+        duration = 15,
+        end_pause = 20
+        )
 
 ```
 
