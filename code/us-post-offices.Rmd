@@ -1,0 +1,70 @@
+---
+title: "us-post-offices"
+author: "JJayes"
+date: "14/04/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+
+```
+
+### Reading in data
+
+```{r}
+
+post_offices <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-04-13/post_offices.csv')
+
+
+```
+
+### Processing
+
+```{r}
+post_office_years <- post_offices %>% 
+  select(name, state, established, discontinued, latitude, longitude) %>% 
+  replace_na(list(discontinued = 2003)) %>% 
+  filter(established >= 1750,
+         discontinued <= 2021,
+         discontinued >= established) %>% 
+  mutate(year = map2(established, discontinued, seq))
+
+post_office_years <- post_office_years %>% 
+  unnest(year)
+```
+
+### Dot plot
+
+```{r}
+library(ggthemes)
+library(gganimate)
+library(gifski)
+
+
+p <- post_office_years %>% 
+  filter(year %% 20 == 0,
+         !state %in% c("HI", "AK")) %>% 
+  ggplot(aes(longitude, latitude, colour = established)) +
+  borders("state") +
+  geom_point(size = .1, alpha = .1) +
+  transition_manual(year) +
+  labs(title = "Spread of post offices in the continental United States: Year { current_frame }",
+       colour = "Post Office Established",
+       caption = "Data: Blevins, Cameron; Helbock, Richard W., 2021, \"US Post Offices\"\nGraphic: Jonathan Jayes") +
+  theme_map() +
+  coord_map() +
+  scale_colour_viridis_c() +
+  theme(plot.title = element_text(hjust = .5),
+        legend.position = "bottom") +
+  guides(colour = guide_colorbar(barwidth = 30, 
+                                 barheight = 0.5, 
+                                 title.position = "top", 
+                                 title.hjust = .5)) 
+
+animate(p, renderer = av_renderer())
+
+```
+
