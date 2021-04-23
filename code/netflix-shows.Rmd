@@ -1,0 +1,178 @@
+---
+title: "netflix-shows"
+author: "JJayes"
+date: "20/04/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(pacman)
+p_load(tidyverse, scales, glue)
+
+theme_set(theme_light())
+```
+
+### Read in data
+
+```{r}
+df <- read.csv("data/netflix_titles.txt")
+
+df <- df %>% as_tibble()
+```
+
+### EDA
+
+```{r}
+df %>% 
+  filter(type == "Movie") %>% 
+  mutate(duration = parse_number(duration)) %>% 
+  ggplot(aes(release_year, duration, group = release_year)) +
+  geom_boxplot()
+
+```
+
+### Idea 
+
+Duration of movies by listed in over time. Density ridges plot.
+
+```{r}
+df %>% 
+  count(listed_in, sort = T)
+
+df <- df %>% 
+  mutate(listed_in = str_split(listed_in, ",")) %>% 
+  unnest(listed_in) %>%
+  mutate(country = str_split(country, ",")) %>% 
+  unnest(country) %>% 
+  filter(type == "Movie") %>% 
+  mutate(listed_in = str_squish(listed_in),
+         country = str_squish(country),
+         duration_min = parse_number(duration))
+
+df <- df %>% 
+  mutate(date_added = lubridate::mdy(date_added))
+
+df %>% 
+  count(listed_in, sort = T)
+
+```
+
+
+```{r}
+library(ggridges)
+
+df %>% 
+  mutate(listed_in = fct_lump(listed_in, 8)) %>% 
+  ggplot(aes(release_year, duration_min)) +
+  geom_point() +
+  facet_wrap(~ listed_in)
+
+df %>% 
+  mutate(listed_in = fct_lump(listed_in, 8)) %>% 
+  mutate(release_year = (release_year %/% 5)*5) %>%
+  ggplot(aes(duration_min, release_year, fill = listed_in)) +
+  geom_density_ridges(show.legend = F) +
+  facet_wrap(~ listed_in)
+
+df %>% 
+  mutate(listed_in = fct_lump(listed_in, 8)) %>% 
+  mutate(release_year = (release_year %/% 5)*5) %>%
+  ggplot(aes(release_year, duration_min, fill = listed_in, group = release_year)) +
+  geom_boxplot() +
+  facet_wrap(~ listed_in)
+
+```
+
+
+```{r}
+df %>% 
+  filter(release_year >= 1970) %>% 
+  mutate(listed_in = fct_lump(listed_in, 8)) %>% 
+  mutate(release_year = (release_year %/% 10)*10) %>%
+  select(release_year, duration_min, listed_in) %>% 
+  ggplot(aes(duration_min, as.factor(release_year), fill = listed_in, group = release_year)) +
+  geom_density_ridges(show.legend = F) +
+  facet_wrap(~ listed_in) +
+  coord_cartesian(xlim = c(NA, 200))
+
+```
+
+```{r}
+df %>% 
+  filter(release_year >= 1970) %>% 
+  mutate(listed_in = fct_lump(listed_in, 8)) %>% 
+  ggplot(aes(release_year, date_added, colour = listed_in)) +
+  geom_point(alpha = .5) +
+  facet_wrap(~ listed_in)
+
+```
+
+
+```{r}
+df %>% 
+  filter(release_year >= 1970) %>% 
+  mutate(listed_in = fct_lump(listed_in, 8)) %>% 
+  mutate(release_year = (release_year %/% 10)*10) %>%
+  select(release_year, duration_min, listed_in) %>% 
+  ggplot(aes(duration_min, as.factor(release_year), fill = listed_in, group = release_year)) +
+  geom_density_ridges(show.legend = F) +
+  facet_wrap(~ listed_in) +
+  coord_cartesian(xlim = c(NA, 200))
+```
+
+
+### Correlation plot between type and country
+
+```{r}
+
+df %>% 
+  count(listed_in, sort = T)
+
+df %>% 
+  count(country, sort = T)
+
+df_count <- df %>% 
+  filter(!country %in% c(""),
+         !listed_in %in% c("Movies", "International Movies")) %>% 
+   mutate(country = fct_lump(country, 16),
+         listed_in = fct_lump(listed_in, 17)) %>%
+  group_by(country) %>% 
+  count(listed_in) %>% 
+  ungroup()
+
+df_count <- df_count %>%
+  pivot_wider(names_from = listed_in, values_from = n, values_fill = 0)
+
+df_pct <- df_count %>% 
+  mutate(total = rowSums(across(where(is.numeric)))) %>% 
+  mutate(across(c(where(is.numeric), -total), ~.x/total)) %>% 
+  mutate(country = fct_reorder(country, total))
+
+df_pct <- df_pct %>% 
+  pivot_longer(-c(country, total), names_to = "listed_in", values_to = "n") 
+
+df_pct %>% 
+  filter(!country %in% "Other") %>% 
+  mutate(country = fct_reorder(country, total)) %>% 
+  ggplot(aes(listed_in, country, fill = n)) +
+  geom_tile(show.legend = F) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 90, vjust = .4, hjust = 1)) +
+  labs(x = NULL,
+       y = NULL,
+       title = "How genre-specific are the countries Netlfix shows are produced in?",
+       caption = "Data: Netflix via TidyTuesday\nGrahpic: Jonathan Jayes")
+
+df_count
+
+
+mat <- as.matrix(df_count)
+
+
+df_count %>% 
+  ggplot(aes())
+
+```
+
