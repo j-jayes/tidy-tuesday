@@ -33,9 +33,9 @@ df %>%
 
 ```
 
-### Idea 
+### Idea: Duration of movies by listed in over time. Density ridges plot.
 
-Duration of movies by listed in over time. Density ridges plot.
+Expanding the genre and country fields.
 
 ```{r}
 df %>% 
@@ -59,34 +59,12 @@ df %>%
 
 ```
 
+Density ridges plot
 
 ```{r}
 library(ggridges)
 
-df %>% 
-  mutate(listed_in = fct_lump(listed_in, 8)) %>% 
-  ggplot(aes(release_year, duration_min)) +
-  geom_point() +
-  facet_wrap(~ listed_in)
 
-df %>% 
-  mutate(listed_in = fct_lump(listed_in, 8)) %>% 
-  mutate(release_year = (release_year %/% 5)*5) %>%
-  ggplot(aes(duration_min, release_year, fill = listed_in)) +
-  geom_density_ridges(show.legend = F) +
-  facet_wrap(~ listed_in)
-
-df %>% 
-  mutate(listed_in = fct_lump(listed_in, 8)) %>% 
-  mutate(release_year = (release_year %/% 5)*5) %>%
-  ggplot(aes(release_year, duration_min, fill = listed_in, group = release_year)) +
-  geom_boxplot() +
-  facet_wrap(~ listed_in)
-
-```
-
-
-```{r}
 df %>% 
   filter(release_year >= 1970) %>% 
   mutate(listed_in = fct_lump(listed_in, 8)) %>% 
@@ -99,33 +77,10 @@ df %>%
 
 ```
 
-```{r}
-df %>% 
-  filter(release_year >= 1970) %>% 
-  mutate(listed_in = fct_lump(listed_in, 8)) %>% 
-  ggplot(aes(release_year, date_added, colour = listed_in)) +
-  geom_point(alpha = .5) +
-  facet_wrap(~ listed_in)
-
-```
-
+### Idea: Correlation plot between type and country
 
 ```{r}
-df %>% 
-  filter(release_year >= 1970) %>% 
-  mutate(listed_in = fct_lump(listed_in, 8)) %>% 
-  mutate(release_year = (release_year %/% 10)*10) %>%
-  select(release_year, duration_min, listed_in) %>% 
-  ggplot(aes(duration_min, as.factor(release_year), fill = listed_in, group = release_year)) +
-  geom_density_ridges(show.legend = F) +
-  facet_wrap(~ listed_in) +
-  coord_cartesian(xlim = c(NA, 200))
-```
-
-
-### Correlation plot between type and country
-
-```{r}
+p_load(ggtext)
 
 df %>% 
   count(listed_in, sort = T)
@@ -151,7 +106,24 @@ df_pct <- df_count %>%
   mutate(country = fct_reorder(country, total))
 
 df_pct <- df_pct %>% 
-  pivot_longer(-c(country, total), names_to = "listed_in", values_to = "n") 
+  pivot_longer(-c(country, total), names_to = "listed_in", values_to = "n")
+```
+
+### Plot of correlation between coutnry and genre
+
+```{r}
+library(extrafont)
+font_import()
+loadfonts(device = "win")
+
+# jpeg(
+#   filename = "figures/netflix-movies.jpeg",
+#   height = 6,
+#   width = 8,
+#   units = "in",
+#   res = 1000
+#   
+# )
 
 df_pct %>% 
   filter(!country %in% "Other") %>% 
@@ -159,20 +131,18 @@ df_pct %>%
   ggplot(aes(listed_in, country, fill = n)) +
   geom_tile(show.legend = F) +
   scale_fill_viridis_c() +
-  theme(axis.text.x = element_text(angle = 90, vjust = .4, hjust = 1)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = .4, hjust = 1),
+        plot.title = element_markdown(),
+        text = element_text(family = "Cambria")) +
   labs(x = NULL,
        y = NULL,
-       title = "How genre-specific are the countries Netlfix shows are produced in?",
+       title = "Are Netlix movies <span style = 'color: #FDE725;'>more</span> or <span style = 'color: #450D54;'>less</span> genre-specific by country of production?",
        caption = "Data: Netflix via TidyTuesday\nGrahpic: Jonathan Jayes")
 
-df_count
+
+# dev.off()
 
 
-mat <- as.matrix(df_count)
-
-
-df_count %>% 
-  ggplot(aes())
 
 ```
 
