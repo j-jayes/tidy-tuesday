@@ -258,8 +258,6 @@ df <- df %>%
 
 ```
 
-TF-IDF
-
 ```{r}
 library(tidytext)
 
@@ -283,78 +281,6 @@ df_words %>%
   geom_col() +
   facet_wrap(~ departure, scales = "free_y") +
   scale_y_reordered()
-
-```
-
-```{r}
-df_words %>% 
-  inner_join(get_sentiments(lexicon = "bing")) %>% 
-  group_by(departure) %>% 
-  count(sentiment) %>% 
-  slice_max(n, n = 3)
-
-```
-
-### Topic modelling
-an unsupervised learning method
-
-```{r}
-library(topicmodels)
-
-df_dtm <- df_words %>% 
-  count(departure, word) %>% 
-  cast_dtm(document = "departure", term = "word", value = "n")
-
-df_topic_model <- LDA(df_dtm, k = 5)
-
-```
-
-Topic model object
-
-What terms make up a topic?
-
-```{r}
-tidy(df_topic_model, matrix = "beta") %>% 
-  group_by(topic) %>% 
-  top_n(beta, n = 6) %>% 
-  ungroup() %>%
-  mutate(topic = factor(topic),
-         term = reorder_within(term, beta, topic)) %>% 
-  ggplot(aes(term, beta, fill = topic)) +
-  geom_col() +
-  scale_x_reordered() +
-  coord_flip()+
-  facet_wrap(~topic, scales = "free") +
-  theme(legend.position = "none")
-
-
-```
-
-Difficult to break up these topics? 
-
-```{r}
-tidy(df_topic_model, matrix = "gamma") %>% 
-  group_by(document) %>% 
-  slice_max(gamma, n = 5) %>% 
-  ungroup() %>% 
-  ggplot(aes(document, gamma, fill = as.factor(topic))) +
-  geom_col() +
-  facet_wrap(~ topic) +
-  labs(title = "How specific is each topic to the different types of submissions")
-
-```
-
-TF-IDF?
-
-```{r}
-df_words %>% 
-  count(departure, word) %>% 
-  bind_tf_idf(word, departure, n) %>% 
-  group_by(departure) %>% 
-  slice_max(tf_idf, n = 5) %>% 
-  ungroup() %>% 
-  arrange(departure, -tf_idf)
-
 
 ```
 
@@ -393,7 +319,14 @@ df_words_to_keep <- df_words %>%
 df_words_to_keep <- df_words_to_keep %>% 
   select(word)
 
+df_words_to_keep <- df_words_to_keep %>% 
+  mutate(index = glue("a{row_number()}")) %>% 
+  pivot_wider(names_from = index, values_from = word) %>% 
+  as.character()
 
+
+df$distinct_words <- str_extract_all(df$sec_filling_text, paste(df_words_to_keep, collapse = '|')) %>% 
+  sapply(., paste, collapse = ", ")
 
 ```
 
@@ -403,11 +336,17 @@ df_words_to_keep <- df_words_to_keep %>%
 ### Initial split
 
 ```{r}
+df_short <- df %>% 
+  select(departure, distinct_words, tenure, fyear)
+
 set.seed(123)
-tidy_split <- initial_split(df %>% sample_n(50), strata = departure)
+tidy_split <- initial_split(df_short, strata = departure)
 tidy_train <- training(tidy_split)
 
 tidy_folds <- vfold_cv(tidy_train)
+
+tidy_train %>% 
+  skimr::skim()
 ```
 
 
@@ -415,31 +354,18 @@ tidy_folds <- vfold_cv(tidy_train)
 
 ```{r}
 library(textrecipes)
-library(spacyr)
 library(themis)
 
-ceo_rec <- recipe(departure ~ sec_filling,  data = tidy_train) %>% 
-  # update_role(notes, new_role = "id") %>% 
-  step_tokenize(sec_filling, engine = "spacyr") %>% 
-  step_pos_filter(sec_filling, keep_tags = c("ADJ", "VERB")) %>% 
-  step_tokenfilter(sec_filling, max_tokens = 200) %>% 
-  step_tfidf(sec_filling) %>% 
-  step_normalize(all_numeric_predictors()) %>% 
-  # for upsampling of the minotiry class
-  step_smote(departure)
-
-
-ceo_rec_2 <- recipe(departure ~ sec_filling,  
+ceo_rec <- recipe(departure ~ .,  
                   data = tidy_train) %>% 
-  step_tokenize(sec_filling) %>% 
-  step_tokenfilter(sec_filling, max_tokens = 200) %>% 
-  step_tfidf(sec_filling) %>% 
+  step_impute_median(tenure) %>% 
+  step_tokenize(distinct_words) %>% 
+  step_tokenfilter(distinct_words, max_tokens = 500) %>% 
+  step_tfidf(distinct_words) %>% 
   step_normalize(all_numeric_predictors()) %>% 
   # for upsampling of the minotiry class
   step_smote(departure)
 
-
-ceo_rec %>% prep() %>% juice()
 
 ```
 
@@ -456,7 +382,7 @@ svm_spec <- svm_linear() %>%
 
 ```{r}
 svm_wf <- workflow() %>% 
-  add_recipe(ceo_rec_2) %>% 
+  add_recipe(ceo_rec) %>% 
   add_model(svm_spec)
 ```
 
@@ -470,7 +396,7 @@ library(parallel)
 
 no_cores <- detectCores(logical = TRUE) 
 
-cl <- makeCluster(no_cores-1)  
+cl <- makeCluster(no_cores-2)  
 registerDoParallel(cl)  
 
 set.seed(123)
@@ -508,7 +434,8 @@ final_fitted <- last_fit(
   metrics = metric_set(accuracy, recall, precision)
 )
 
-
-
 ```
+
+Then draw conf_mat and just publish.
+
 
