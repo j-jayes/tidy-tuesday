@@ -1,0 +1,514 @@
+---
+title: "ceo-exits"
+author: "JJayes"
+date: "27/04/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(tidymodels)
+library(rvest)
+library(glue)
+
+```
+
+### Reading in data
+
+```{r}
+
+departures <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-04-27/departures.csv')
+```
+
+### EDA
+
+```{r}
+departures %>% 
+  skimr::skim()
+
+
+departures %>% 
+  filter(!is.na(departure_code)) %>% 
+  count(fyear, departure_code) %>% 
+  ggplot(aes(fyear, n, fill = as.factor(departure_code))) +
+  geom_col() +
+  labs(fill = NULL)
+```
+
+
+Relationship between tenure and probability of dying in office?
+
+Departure code 5 means voluntary retirement. What words are associated with this?
+
+```{r}
+library(tidytext)
+
+departures %>% 
+  filter(departure_code == 5) %>% 
+  unnest_tokens(word, notes) %>% 
+  anti_join(stop_words) %>% 
+  count(word, sort = T)
+  
+
+```
+
+What about predicting whether the person was fired or retired based on sec fillings? 
+
+- this would entail some webscraping - yay
+- then a bit of NLP
+- can see if using only verbs and adjectives makes it easier to distinguish between the two.
+- use step smote to see if we can get around the class imbalance.
+
+```{r}
+departures %>% 
+  filter(!is.na(departure_code),
+         !is.na(eight_ks)) %>% 
+  count(fyear, departure_code) %>% 
+  ggplot(aes(fyear, n, fill = as.factor(departure_code))) +
+  geom_col() +
+  labs(fill = NULL)
+
+departures %>% 
+  filter(!is.na(departure_code),
+         !is.na(eight_ks)) %>% 
+  count(departure_code, sort = T)
+
+departures %>% select(tenure_no_ceodb)
+
+```
+
+Can do 5s vs 3s (and 4s)? Retired vs involuntarily dismissed for poor performance?
+
+```{r}
+
+df <- departures %>% 
+  filter(!is.na(eight_ks),
+         departure_code %in% c(3,4,5))
+
+```
+
+```{r}
+
+df <- df %>% 
+  # select(eight_ks) %>% 
+  mutate(sec_url = strsplit(eight_ks, "\r")) %>% 
+  unnest(sec_url)
+
+```
+
+Some of the links have way too much in the url
+
+### Scraper
+
+```{r}
+library(httr)
+
+get_sec_text <- function(sec_url){
+  
+  message(glue("Getting review content from {sec_url}"))
+  
+  html <- GET(sec_url, add_headers('user-agent' = 'SEC data scraper ([[j0nathanjayes@gmail.com]])'))
+  
+  text <- html %>%
+    read_html() %>% 
+    html_text() %>% 
+    str_squish()
+  
+}
+
+df_text <- df %>% 
+  # filter(row_number() < 10) %>%
+  mutate(sec_filling = map(sec_url, possibly(get_sec_text, "failed")))
+
+df_text %>% 
+  unnest(sec_filling) %>% view()
+
+write_rds(df_text, "data/ceo-exits/df_text.rds")
+
+```
+
+
+
+
+
+---------------------------------------------------------------------------
+
+### Using the data
+
+```{r}
+
+df <- read_rds("data/ceo-exits/df_text.rds")
+
+df <- df %>% 
+  unnest(sec_filling)
+
+df <- df %>% 
+  mutate(sec_filling = str_to_lower(sec_filling))
+
+df <- df %>%
+  mutate(n_char = nchar(sec_filling)) %>% 
+  filter(n_char < 10000) %>% 
+  mutate(sec_filling = str_remove_all(sec_filling, "--"),
+         sec_filling = str_remove_all(sec_filling, "=="),
+         sec_filling = str_remove_all(sec_filling, "__"))
+
+df <- df %>% 
+  mutate(sec_filling = str_remove_all(sec_filling, "([0-9][0-9][0-9]+)"))
+
+```
+
+### Feature engineering: tenure
+
+```{r}
+df_tenure <- df %>%
+  mutate(
+    still_there = lubridate::dmy(still_there), 
+    interim = case_when(
+      tolower(interim_coceo) == "interim" ~ "Interim CEO",
+      TRUE ~ "Not interim"
+    )) %>% 
+  select(coname, gvkey, fyear, still_there, interim) %>%
+  distinct() %>% 
+  group_by(gvkey) %>% 
+  arrange(gvkey, fyear) %>%
+  mutate(tenure = case_when(
+    is.na(still_there) ~ -1*(fyear - lead(fyear, 1)),
+    TRUE ~ lubridate::year(still_there) - fyear
+  )) %>%
+  ungroup()
+
+df_tenure <- df_tenure %>% 
+  select(coname:fyear, tenure) %>% 
+  mutate(key = glue("{coname}-{gvkey}-{fyear}")) %>% 
+  select(key, tenure)
+
+df <- df %>% 
+  mutate(key = glue("{coname}-{gvkey}-{fyear}"))
+
+df <- df %>% 
+  left_join(df_tenure, by = "key") %>% 
+  select(-key)
+
+```
+
+I need to make a decision about whether to widen the data
+
+```{r}
+df <- df %>%
+  mutate(departure = case_when(
+    
+    departure_code == 5 ~ "Retired",
+    departure_code %in% c(3,4) ~ "Fired"
+  )) %>% 
+  mutate(departure = as.factor(departure))
+
+```
+
+Just for now take only the outcome and predictor
+
+```{r}
+# df <- df %>% 
+#   select(departure, sec_filling)
+
+```
+
+### EDA
+
+```{r}
+df %>% 
+  count(departure, sort = T)
+
+```
+
+### A bit more feaure engineering
+
+- Idea is to use the words that are most specific to each document with the bind_tf_idf command and then filter to include the words that are the sec_filling column. 
+- We only want the text after "Item 5"
+
+maybe do a str_detect "item 5" 
+
+```{r}
+
+df <- df %>% 
+  # head(1000) %>% 
+  mutate(sec_filling_code = case_when(
+    
+    str_detect(sec_filling, "item 5") ~ "item 5",
+    str_detect(sec_filling, "item 9") ~ "item 9",
+    str_detect(sec_filling, "item 12") ~ "item 12",
+    str_detect(sec_filling, "failed") ~ "failed",
+    TRUE ~ "Other"
+  )) %>% 
+  mutate(sec_filling_text = case_when(
+    
+    str_detect(sec_filling_code, "Other") ~ sec_filling,
+    TRUE ~ str_remove(sec_filling, glue(".*{sec_filling_code}"))
+    
+  )) %>% 
+  select(-sec_filling)
+
+df %>% 
+  count(sec_filling_code, sort = T)
+
+df <- df %>% 
+  filter(sec_filling_code != "failed")
+
+
+```
+
+TF-IDF
+
+```{r}
+library(tidytext)
+
+df_words <- df %>% 
+  unnest_tokens(word, "sec_filling_text", token = "words") %>% 
+  anti_join(stop_words)
+
+```
+
+### Bag of words approach
+
+```{r}
+
+df_words %>% 
+  count(departure, word) %>% 
+  group_by(departure) %>% 
+  slice_max(n, n = 15) %>% 
+  ungroup() %>% 
+  mutate(word = reorder_within(word, n, departure)) %>% 
+  ggplot(aes(n, word, fill = departure)) +
+  geom_col() +
+  facet_wrap(~ departure, scales = "free_y") +
+  scale_y_reordered()
+
+```
+
+```{r}
+df_words %>% 
+  inner_join(get_sentiments(lexicon = "bing")) %>% 
+  group_by(departure) %>% 
+  count(sentiment) %>% 
+  slice_max(n, n = 3)
+
+```
+
+### Topic modelling
+an unsupervised learning method
+
+```{r}
+library(topicmodels)
+
+df_dtm <- df_words %>% 
+  count(departure, word) %>% 
+  cast_dtm(document = "departure", term = "word", value = "n")
+
+df_topic_model <- LDA(df_dtm, k = 5)
+
+```
+
+Topic model object
+
+What terms make up a topic?
+
+```{r}
+tidy(df_topic_model, matrix = "beta") %>% 
+  group_by(topic) %>% 
+  top_n(beta, n = 6) %>% 
+  ungroup() %>%
+  mutate(topic = factor(topic),
+         term = reorder_within(term, beta, topic)) %>% 
+  ggplot(aes(term, beta, fill = topic)) +
+  geom_col() +
+  scale_x_reordered() +
+  coord_flip()+
+  facet_wrap(~topic, scales = "free") +
+  theme(legend.position = "none")
+
+
+```
+
+Difficult to break up these topics? 
+
+```{r}
+tidy(df_topic_model, matrix = "gamma") %>% 
+  group_by(document) %>% 
+  slice_max(gamma, n = 5) %>% 
+  ungroup() %>% 
+  ggplot(aes(document, gamma, fill = as.factor(topic))) +
+  geom_col() +
+  facet_wrap(~ topic) +
+  labs(title = "How specific is each topic to the different types of submissions")
+
+```
+
+TF-IDF?
+
+```{r}
+df_words %>% 
+  count(departure, word) %>% 
+  bind_tf_idf(word, departure, n) %>% 
+  group_by(departure) %>% 
+  slice_max(tf_idf, n = 5) %>% 
+  ungroup() %>% 
+  arrange(departure, -tf_idf)
+
+
+```
+
+Tidy log odds package
+
+```{r}
+library(tidylo)
+
+df_log_odds <- df_words %>% 
+  count(departure, word) %>% 
+  bind_log_odds(departure, word, n) %>% 
+  filter(n > 200) %>% 
+  group_by(departure) %>% 
+  slice_max(log_odds_weighted, n = 20) %>% 
+  ungroup() %>% 
+  arrange(departure, - log_odds_weighted)
+
+df_log_odds %>% 
+  mutate(word = reorder_within(word, log_odds_weighted, departure)) %>% 
+  ggplot(aes(log_odds_weighted, word, fill = departure)) +
+  geom_col() +
+  facet_wrap(~ departure, scales = "free_y") +
+  scale_y_reordered()
+
+```
+
+So we can limit the number of words to be only those in the tidy log odds 
+
+```{r}
+
+df_words_to_keep <- df_words %>% 
+  count(departure, word) %>% 
+  bind_log_odds(departure, word, n) %>% 
+  filter(n > 175)
+
+df_words_to_keep <- df_words_to_keep %>% 
+  select(word)
+
+
+
+```
+
+
+# Modelling
+
+### Initial split
+
+```{r}
+set.seed(123)
+tidy_split <- initial_split(df %>% sample_n(50), strata = departure)
+tidy_train <- training(tidy_split)
+
+tidy_folds <- vfold_cv(tidy_train)
+```
+
+
+### Make recipe
+
+```{r}
+library(textrecipes)
+library(spacyr)
+library(themis)
+
+ceo_rec <- recipe(departure ~ sec_filling,  data = tidy_train) %>% 
+  # update_role(notes, new_role = "id") %>% 
+  step_tokenize(sec_filling, engine = "spacyr") %>% 
+  step_pos_filter(sec_filling, keep_tags = c("ADJ", "VERB")) %>% 
+  step_tokenfilter(sec_filling, max_tokens = 200) %>% 
+  step_tfidf(sec_filling) %>% 
+  step_normalize(all_numeric_predictors()) %>% 
+  # for upsampling of the minotiry class
+  step_smote(departure)
+
+
+ceo_rec_2 <- recipe(departure ~ sec_filling,  
+                  data = tidy_train) %>% 
+  step_tokenize(sec_filling) %>% 
+  step_tokenfilter(sec_filling, max_tokens = 200) %>% 
+  step_tfidf(sec_filling) %>% 
+  step_normalize(all_numeric_predictors()) %>% 
+  # for upsampling of the minotiry class
+  step_smote(departure)
+
+
+ceo_rec %>% prep() %>% juice()
+
+```
+
+### Model spec
+
+```{r}
+svm_spec <- svm_linear() %>% 
+  set_mode("classification") %>% 
+  set_engine("LiblineaR")
+
+```
+
+### Model workflow
+
+```{r}
+svm_wf <- workflow() %>% 
+  add_recipe(ceo_rec_2) %>% 
+  add_model(svm_spec)
+```
+
+### Fit resamples
+
+Nb should include the metric set in here.
+
+```{r}
+library(doParallel)
+library(parallel)
+
+no_cores <- detectCores(logical = TRUE) 
+
+cl <- makeCluster(no_cores-1)  
+registerDoParallel(cl)  
+
+set.seed(123)
+
+svm_res <- fit_resamples(
+  svm_wf,
+  tidy_folds,
+  metrics = metric_set(accuracy, recall, precision),
+  control = control_resamples(save_pred = T)
+)
+```
+
+### What are the results like?
+
+```{r}
+collect_metrics(svm_res)
+
+```
+
+### Visualizing results
+
+```{r}
+svm_res %>% 
+  conf_mat_resampled(tidy = F)
+
+```
+
+### Final fitted
+
+```{r}
+
+final_fitted <- last_fit(
+  svm_wf,
+  tidy_split,
+  metrics = metric_set(accuracy, recall, precision)
+)
+
+
+
+```
+
