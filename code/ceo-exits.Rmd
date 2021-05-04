@@ -443,6 +443,7 @@ final_fitted <- last_fit(
   metrics = metric_set(accuracy, recall, precision)
 )
 
+write_rds(final_fitted, "data/ceo-exits/model_fitted.rds")
 ```
 
 Then draw conf_mat and just publish.
