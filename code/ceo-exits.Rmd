@@ -328,6 +328,8 @@ df_words_to_keep <- df_words_to_keep %>%
 df$distinct_words <- str_extract_all(df$sec_filling_text, paste(df_words_to_keep, collapse = '|')) %>% 
   sapply(., paste, collapse = ", ")
 
+write_rds(df, "data/ceo-exits/df_words.rds")
+
 ```
 
 
@@ -337,7 +339,7 @@ df$distinct_words <- str_extract_all(df$sec_filling_text, paste(df_words_to_keep
 
 ```{r}
 df_short <- df %>% 
-  select(departure, distinct_words, tenure, fyear)
+  select(departure, distinct_words, tenure)
 
 set.seed(123)
 tidy_split <- initial_split(df_short, strata = departure)
@@ -407,6 +409,8 @@ svm_res <- fit_resamples(
   metrics = metric_set(accuracy, recall, precision),
   control = control_resamples(save_pred = T)
 )
+
+write_rds(svm_res, "data/ceo-exits/model_1.rds")
 ```
 
 ### What are the results like?
@@ -418,13 +422,18 @@ collect_metrics(svm_res)
 
 ### Visualizing results
 
+Here we show a confusion matrix of the 
+
 ```{r}
 svm_res %>% 
-  conf_mat_resampled(tidy = F)
+  conf_mat_resampled() %>% 
+  ggplot(aes())
 
 ```
 
 ### Final fitted
+
+Fit the best model to the until-now unseen testing data.
 
 ```{r}
 
@@ -438,4 +447,7 @@ final_fitted <- last_fit(
 
 Then draw conf_mat and just publish.
 
+```{r}
+final_fitted %>% collect_metrics()
+```
 
