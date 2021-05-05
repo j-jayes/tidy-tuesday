@@ -129,6 +129,22 @@ write_rds(df_text, "data/ceo-exits/df_text.rds")
 
 ```
 
+## Scrape reasons
+
+Get the reasons for departure from tidytuesday description
+
+```{r}
+url <- "https://github.com/rfordatascience/tidytuesday/blob/master/data/2021/2021-04-27/readme.md"
+
+departure_type <- read_html(url) %>% 
+  html_nodes("table") %>%
+  html_table()
+
+departure_type <- departure_type[[2]]
+
+write_rds(departure_type, "data/ceo-exits/description.rds")
+
+```
 
 
 
@@ -328,7 +344,7 @@ df_words_to_keep <- df_words_to_keep %>%
 df$distinct_words <- str_extract_all(df$sec_filling_text, paste(df_words_to_keep, collapse = '|')) %>% 
   sapply(., paste, collapse = ", ")
 
-write_rds(df, "data/ceo-exits/df_words.rds")
+write_rds(df, "data/ceo-exits/df_words.rds", compress = "gz")
 
 ```
 
@@ -410,7 +426,7 @@ svm_res <- fit_resamples(
   control = control_resamples(save_pred = T)
 )
 
-write_rds(svm_res, "data/ceo-exits/model_1.rds")
+write_rds(svm_res, "data/ceo-exits/model_1.rds", compress = "gz")
 ```
 
 ### What are the results like?
@@ -427,7 +443,7 @@ Here we show a confusion matrix of the
 ```{r}
 svm_res %>% 
   conf_mat_resampled() %>% 
-  ggplot(aes())
+  autoplot.conf_mat(object, type = "mosaic")
 
 ```
 
@@ -443,7 +459,7 @@ final_fitted <- last_fit(
   metrics = metric_set(accuracy, recall, precision)
 )
 
-write_rds(final_fitted, "data/ceo-exits/model_fitted.rds")
+write_rds(final_fitted, "data/ceo-exits/model_fitted.rds", compress = "gz")
 ```
 
 Then draw conf_mat and just publish.
