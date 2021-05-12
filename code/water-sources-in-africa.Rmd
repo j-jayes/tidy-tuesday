@@ -1,0 +1,170 @@
+---
+title: "water-sources-in-africa"
+author: "JJayes"
+date: "12/05/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(scales)
+theme_set(theme_light())
+```
+
+## Purpose
+
+Make a nice map with background in ggplot using tidy tuesday data on water sources.
+
+### Reading in data
+
+```{r}
+water <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-05-04/water.csv')
+
+df <- water %>% 
+  janitor::clean_names() %>% 
+  rename(lat = lat_deg,
+         lon = lon_deg,
+         country = country_name)
+
+df %>% 
+  count(country, sort = T)
+```
+
+### Which countries might be good to map?
+
+```{r}
+countries <- c("Nigeria", "Sierra Leone", "Liberia", "Ethiopia", "Swaziland")
+
+
+df %>% 
+  filter(country %in% countries) %>% 
+  group_by(country) %>% 
+  count(water_source) %>% 
+  ungroup() %>% 
+  ggplot(aes(n, water_source, fill = country)) +
+  geom_col() +
+  facet_wrap(~ country)
+```
+
+```{r}
+df %>% 
+  filter(country %in% countries) %>% 
+  group_by(country) %>% 
+  count(water_tech) %>% 
+  ungroup() %>% 
+  ggplot(aes(n, water_tech, fill = country)) +
+  geom_col() +
+  facet_wrap(~ country)
+```
+
+
+```{r}
+df %>% 
+  filter(country == "Nigeria") %>%
+  count(water_source, sort = T)
+
+df %>% 
+  filter(country == "Nigeria") %>%
+  count(water_tech, sort = T)
+```
+
+
+```{r}
+df_nigeria <- df %>% 
+  filter(country == "Nigeria") %>%
+  mutate(tech_lumped = case_when(
+    str_detect(water_tech, "Hand Pump") ~ "Hand Pump",
+    str_detect(water_tech, "Mechanized Pump") ~ "Mechanized Pump",
+    TRUE ~ "Other"
+    
+  ))
+
+
+df_nigeria %>% 
+  count(tech_lumped, sort = T)
+
+```
+
+
+```{r}
+df_sierra_leone <- df %>% 
+  filter(country == "Sierra Leone") %>%
+  mutate(water_tech = replace_na(water_tech, "Other")) %>% 
+  mutate(tech_lumped = case_when(
+    str_detect(water_tech, "Hand Pump") ~ "Hand Pump",
+    str_detect(water_tech, "Rope and Bucket") ~ "Rope and Bucket",
+    str_detect(water_tech, "Tapstand") ~ "Tapstand",
+    TRUE ~ "Other"
+    
+  ))
+```
+
+
+### Will use Nigeria as it has the second most observations
+
+Test map
+
+```{r}
+df_nigeria %>% 
+  sample_n(10000) %>% 
+  ggplot(aes(lon, lat, colour = tech_lumped)) +
+  geom_point()
+
+df_sierra_leone %>% 
+  filter(between(lon, -15, -5),
+         between(lat, 5, 15)) %>% 
+  sample_n(10000) %>% 
+  ggplot(aes(lon, lat, colour = tech_lumped)) +
+  geom_point()
+
+```
+
+### Mapping with ggmap
+
+```{r}
+library(ggmap)
+
+b_box_nigeria <- c(left = 2, bottom = 3, right = 15, top = 14)
+
+nigeria_map <- get_map(b_box_nigeria, zoom = 6)
+
+ggmap(nigeria_map) +
+    geom_point(aes(lon, lat), 
+               data = df_nigeria %>% sample_n(10000),
+               size = .2, alpha = .25,
+               show.legend = F,
+               colour = "#2c7fb8") +
+  facet_wrap(~ tech_lumped)
+
+
+```
+
+```{r}
+b_box_sierra_leone <- c(left = -14, bottom = 7, right = -10, top = 10)
+
+sierra_leone_map <- get_map(b_box_sierra_leone, zoom = 6)
+
+ggmap(sierra_leone_map) +
+    geom_point(aes(lon, lat), 
+               data = df_sierra_leone,
+               size = .2, alpha = .25,
+               show.legend = F,
+               colour = "#2c7fb8") +
+  facet_wrap(~ tech_lumped)
+
+
+```
+
+### 
+
+```{r}
+library(lubridate)
+
+df_nigeria %>% 
+  mutate(year = year(report_date))
+```
+

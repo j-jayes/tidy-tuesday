@@ -146,9 +146,6 @@ write_rds(departure_type, "data/ceo-exits/description.rds")
 
 ```
 
-
-
-
 ---------------------------------------------------------------------------
 
 ### Using the data
@@ -286,6 +283,8 @@ df_words <- df %>%
 ### Bag of words approach
 
 ```{r}
+
+# write_rds(df_words, "data/ceo-exits/df_word.rds", compress = "gz")
 
 df_words %>% 
   count(departure, word) %>% 
