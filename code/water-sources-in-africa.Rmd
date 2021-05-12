@@ -159,12 +159,66 @@ ggmap(sierra_leone_map) +
 
 ```
 
-### 
+### Animated map 
 
 ```{r}
-library(lubridate)
+library(gganimate)
+library(ggthemes)
 
 df_nigeria %>% 
-  mutate(year = year(report_date))
+  select(install_year) %>% 
+  count(install_year, sort = T)
+
+df_nigeria %>% 
+  filter(tech_lumped != "Other",
+         between(lat, 0, 14),
+         between(lon, 0, 20),
+         !is.na(install_year)) %>% 
+  sample_n(10000) %>% 
+  mutate(year = pmax(1990, install_year)) %>% 
+  mutate(year = map(year, ~ seq(., 2021))) %>% 
+  unnest(year) %>% 
+  ggplot(aes(lon, lat)) +
+  geom_point(size = .5, alpha = .25) +
+  facet_wrap(~ tech_lumped) +
+  transition_manual(year) +
+  labs(title = "How does the installation of Hand Pumps \nand Mechanised Pumps differ in Nigeria?",
+       subtitle = "Year: { current_frame }")
+  
+```
+
+
+```{r}
+point_data <- df_nigeria %>% 
+  filter(tech_lumped != "Other",
+         between(lat, 0, 14),
+         between(lon, 0, 20),
+         !is.na(install_year)) %>% 
+  sample_n(10000) %>% 
+  mutate(year = pmax(1990, install_year)) %>% 
+  mutate(year = map(year, ~ seq(., 2021))) %>% 
+  unnest(year) 
+
+
+p <- ggmap(nigeria_map) +
+  geom_point(aes(lon, lat, colour = tech_lumped), 
+             size = .5, alpha = .25, 
+             show.legend = F,
+             data = point_data) +
+  facet_wrap(~ tech_lumped) +
+  transition_manual(year) +
+  scale_colour_manual(values = c("#ef8a62", "#67a9cf")) +
+  labs(title = "How does the installation of Hand Pumps \nand Mechanised Pumps differ in Nigeria?",
+       subtitle = "Year: { current_frame }") +
+  theme_map()
+
+animate(p, renderer = av_renderer(file = "images/nigeriamap_sq.mp4"),
+           width = 720,
+           heigh = 720,
+        res = 144,
+        duration = 15,
+        end_pause = 10
+        )
+  
 ```
 
