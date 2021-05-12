@@ -189,28 +189,37 @@ df_nigeria %>%
 
 
 ```{r}
+library(ggtext)
+
 point_data <- df_nigeria %>% 
   filter(tech_lumped != "Other",
          between(lat, 0, 14),
          between(lon, 0, 20),
          !is.na(install_year)) %>% 
-  sample_n(10000) %>% 
+  # sample_n(10000) %>% 
+  filter(install_year <= 2021) %>% 
   mutate(year = pmax(1990, install_year)) %>% 
   mutate(year = map(year, ~ seq(., 2021))) %>% 
-  unnest(year) 
+  unnest(year)
+```
 
 
+```{r}
 p <- ggmap(nigeria_map) +
   geom_point(aes(lon, lat, colour = tech_lumped), 
-             size = .5, alpha = .25, 
+             size = .3, alpha = .25, 
              show.legend = F,
              data = point_data) +
   facet_wrap(~ tech_lumped) +
   transition_manual(year) +
-  scale_colour_manual(values = c("#ef8a62", "#67a9cf")) +
-  labs(title = "How does the installation of Hand Pumps \nand Mechanised Pumps differ in Nigeria?",
-       subtitle = "Year: { current_frame }") +
-  theme_map()
+  scale_colour_manual(values = c("#f1a340", "#998ec3")) +
+  labs(title = "How does the installation of <br><span style = 'color: #f1a340;'>Hand Pumps</span> and <span style = 'color: #998ec3;'>Mechanised Pumps</span> <br>differ in Nigeria?",
+       subtitle = "Year: { current_frame }",
+       caption = "Data: Water Point Data Exchange\nGraphic: Jonathan Jayes") +
+  theme_map() +
+  theme(panel.spacing = unit(1, "lines"),
+        plot.title = element_markdown(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5))
 
 animate(p, renderer = av_renderer(file = "images/nigeriamap_sq.mp4"),
            width = 720,
