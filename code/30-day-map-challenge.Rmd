@@ -1,0 +1,105 @@
+---
+title: "30-day-map-challenge"
+author: "JJayes"
+date: "05/11/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Get the Data
+
+library(spData)
+
+# note that spDataLarge needs to be installed via:
+install.packages("spDataLarge",
+repos = "https://nowosad.github.io/drat/", type = "source")
+library(spDataLarge) 
+```
+
+
+```{r}
+library(tidyverse)
+```
+
+## Explore data
+
+```{r}
+data("lsl", package = "spDataLarge")
+
+landslides <- as_tibble(lsl)
+
+landslides
+```
+
+```{r}
+landslides %>% 
+  ggplot(aes(x, y, colour = elev, shape = lslpts)) +
+  geom_point() +
+  scale_color_gradient2(low = "blue", high = "red", midpoint = 2400) +
+  coord_fixed()
+```
+
+```{r}
+landslides %>% 
+  ggplot(aes(x, y)) +
+  stat_summary_hex(aes(z = elev), alpha = 0.6, bins = 12) +
+  geom_point(aes(colour = lslpts)) +
+  scale_fill_gradient2(low = "blue", high = "red", midpoint = 2400) +
+  scale_colour_manual(values = c("gray90", "midnightblue")) +
+  coord_fixed() +
+  labs(colour = "Landslide?",
+       fill = "Elevation")
+```
+
+Points that are close to eachother tend to be similar. 
+
+need to take this into account when resampling.
+
+```{r}
+library(tidymodels)
+# install.packages("spatialsample")
+library(spatialsample)
+
+set.seed(2021)
+good_folds <- spatial_clustering_cv(landslides, coords = c("x", "y"), v = 5)
+good_folds
+
+bad_folds <- vfold_cv(landslides, v = 5, strata = lslpts)
+bad_folds
+
+```
+
+Function to plot this
+
+```{r}
+plot_splits <- function(split){
+  
+  p <- bind_rows(
+    analysis(split) %>% 
+      mutate(analysis = "Analysis"),
+    assessment(split) %>% 
+      mutate(analysis = "Assessment")
+  ) %>% 
+    ggplot(aes(x, y, colour = analysis)) +
+    geom_point(size = 1.5, alpha = 0.8) +
+    coord_fixed() +
+    labs(colour = NULL)
+  
+  print(p)
+  
+}
+
+purrr::walk(good_folds$splits, plot_splits)
+
+```
+
+vs the bad folds
+
+```{r}
+purrr::walk(bad_folds$splits, plot_splits)
+```
+
