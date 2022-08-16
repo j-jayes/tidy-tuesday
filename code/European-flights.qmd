@@ -70,7 +70,16 @@ small_group <- df_sum %>% distinct(pivot_label) %>% sample_n(30)
 
 df_sum %>% 
   filter(pivot_label %in% small_group$pivot_label) %>% 
-  ggplot(aes(total_flights))
+  ggplot(aes(flt_date, total_flights, colour = pivot_label)) +
+  geom_line()
+```
+
+
+```{r}
+df <- flights %>%
+  mutate(Date = make_date(YEAR,MONTH_NUM)) %>%
+  group_by(Date, STATE_NAME) %>%
+  summarise(total = sum(FLT_TOT_1))
 ```
 
 

@@ -1,0 +1,83 @@
+---
+title: "Character-traits"
+format: html
+---
+
+```{r}
+library(tidyverse)
+tuesdata <- tidytuesdayR::tt_load(2022, week = 33)
+
+```
+
+```{r}
+tuesdata$characters
+```
+
+```{r}
+tuesdata$myers_briggs
+```
+
+```{r}
+tuesdata$psych_stats %>% view()
+```
+
+## Questions: who has the most ratings??
+
+```{r}
+psych_stats <- tuesdata$psych_stats
+
+# psych_stats %>% write_rds(here::here("data", "psych_stats.rds"))
+
+psych_stats %>% 
+  group_by(char_name) %>% 
+  count(number_ratings) 
+```
+
+Who has the greatest ambiguousity between straight and queer??
+
+```{r}
+psych_stats %>% 
+  filter(question == "queer/straight") %>% 
+  arrange(avg_rating) %>% view()
+```
+
+Which characters are the most similar in the West Wing??
+
+```{r}
+psych_stats_wide <- psych_stats %>% 
+  filter(uni_name == "The West Wing") %>% 
+  select(char_name, personality, avg_rating) %>% 
+  distinct(char_name, personality, .keep_all = T) %>% 
+  pivot_wider(names_from = personality, values_from = avg_rating) 
+```
+
+
+```{r}
+psych_stats_wide
+```
+
+
+```{r}
+random_traits <- psych_stats %>% 
+  distinct(personality) %>% 
+  sample_n(12)
+
+
+psych_stats %>% 
+  filter(personality %in% random_traits$personality) %>% 
+  ggplot(aes(rank, avg_rating, colour = personality)) +
+  geom_point() + 
+  geom_text(aes(rank, avg_rating, label = char_name), check_overlap = T, show.legend = F)
+```
+
+
+I guess do some dimensionality reduction to show where people fit?
+
+Do some filtering - turning parameters - some thing about 
+
+```{r}
+
+```
+
+
+
