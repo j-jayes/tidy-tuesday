@@ -14,7 +14,15 @@ tuesdata$characters
 ```
 
 ```{r}
-tuesdata$myers_briggs
+myers_briggs <- tuesdata$myers_briggs
+```
+
+myers_briggs - it looks like people have done this quiz on behalf of the characters. 
+ 
+```{r}
+myers_briggs %>% 
+  group_by(char_name) %>% 
+  slice_max(order_by = number_users, n = 1, with_ties = F)
 ```
 
 ```{r}
@@ -26,7 +34,7 @@ tuesdata$psych_stats %>% view()
 ```{r}
 psych_stats <- tuesdata$psych_stats
 
-# psych_stats %>% write_rds(here::here("data", "psych_stats.rds"))
+# psych_stats %>% write_rds(here::here("dgata", "psych_stats.rds"))
 
 psych_stats %>% 
   group_by(char_name) %>% 
@@ -45,11 +53,111 @@ Which characters are the most similar in the West Wing??
 
 ```{r}
 psych_stats_wide <- psych_stats %>% 
-  filter(uni_name == "The West Wing") %>% 
+  # filter(uni_name == "The West Wing") %>% 
   select(char_name, personality, avg_rating) %>% 
   distinct(char_name, personality, .keep_all = T) %>% 
-  pivot_wider(names_from = personality, values_from = avg_rating) 
+  pivot_wider(names_from = personality, values_from = avg_rating) %>% 
+  janitor::clean_names()
+
+psych_stats_wide <- psych_stats_wide %>% 
+  pivot_longer(-char_name) %>% 
+  filter(!is.na(value)) %>% 
+  add_count(name) %>% 
+  filter(n > 700) %>% 
+  select(-n)
+
+psych_stats_wide %>% 
+  mutate(n_char_name = nchar(name)) %>% 
+  arrange(desc(n_char_name))
+
+psych_stats_wide <- psych_stats_wide %>% 
+  pivot_wider(names_from = name, values_from = value)
+
+dim_red_rec <- recipe(char_name ~ ., data = psych_stats_wide) %>% 
+  step_impute_mean(all_predictors()) %>%
+  step_normalize(all_predictors()) %>%
+  step_pca(all_predictors(), num_comp = 5)
+
+dim_red_juiced <- dim_red_rec %>% prep() %>% juice()
+
+characters <- tuesdata$characters %>% 
+  select(char_name = name, uni_name)
+
+dim_red_juiced <- dim_red_juiced %>% 
+  inner_join(characters)
+
+universes <- characters %>% 
+  distinct(uni_name) %>% 
+  sample_n(5)
+
+universes_selected <- c("New Girl", "Stranger Things", "The West Wing", "House", "How I Met Your Mother")
+
+dim_red_juiced %>% 
+  filter(uni_name %in% universes_selected) %>% 
+  ggplot(aes(PC1, PC2, label = char_name, colour = uni_name)) +
+  geom_point() +
+  geom_label()
+
+
 ```
+
+
+```{r}
+library(corrr)
+
+psych_stats_wide %>% 
+  select(-char_name) %>% 
+  corrr::correlate() %>% 
+  autoplot()
+```
+
+```{r}
+library(tidymodels)
+
+ranking_rec <- recipe(points ~ ., data = ranking_df) %>%
+  update_role(title, artist, new_role = "id") %>%
+  step_log(points) %>%
+  step_normalize(all_predictors()) %>%
+  step_pca(all_predictors())
+
+ranking_prep <- prep(ranking_rec)
+
+ranking_prep
+```
+
+
+
+```{r}
+tidied_pca <- tidy(ranking_prep, 3)
+
+tidied_pca %>%
+  mutate(component = fct_inorder(component)) %>%
+  ggplot(aes(value, terms, fill = terms)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~component) +
+  labs(y = NULL)
+```
+
+
+```{r}
+library(tidytext)
+
+tidied_pca %>%
+  filter(component %in% c("PC1", "PC2", "PC3", "PC4")) %>%
+  group_by(component) %>%
+  top_n(6, abs(value)) %>%
+  ungroup() %>%
+  mutate(terms = reorder_within(terms, abs(value), component)) %>%
+  ggplot(aes(abs(value), terms, fill = value > 0)) +
+  geom_col() +
+  facet_wrap(~component, scales = "free_y") +
+  scale_y_reordered() +
+  labs(
+    x = "Absolute value of contribution",
+    y = NULL, fill = "Positive?"
+  )
+```
+
 
 
 ```{r}
@@ -74,6 +182,27 @@ psych_stats %>%
 I guess do some dimensionality reduction to show where people fit?
 
 Do some filtering - turning parameters - some thing about 
+
+```{r}
+library(embed)
+library(tidymodels)
+
+personality_filtered <- psych_stats %>% 
+  count(personality, sort = T) %>% 
+  arrange(n) %>% 
+  filter(n > 500)
+
+```
+
+Gets us 291 traits
+
+```{r}
+personality_filtered
+```
+
+
+What I would also like to do is a nearest neighbours classifier to find most similar characters in other series.
+Like, if Barney Stinson was in the West Wing, where would he be?
 
 ```{r}
 
